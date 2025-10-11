@@ -1,0 +1,12 @@
+{
+  "name": "gravitrax-simulator",
+  "version": "1.0.0",
+  "description": "GraviTrax Simulator",
+  "main": "game.js",
+  "scripts": {
+    "start": "http-server"
+  },
+  "dependencies": {
+    "http-server": "^14.1.1"
+  }
+}

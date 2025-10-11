@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head> 
+  <meta charset="UTF-8" />
+  <title>Online GraviTrax Simulator</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body { height: 100%; margin: 0; background: #000; }
+    canvas { display: block; position: fixed; z-index: 1; }
+    #fps-counter { position: fixed; top: 10px; left: 10px; background: rgba(0,0,0,0.5); color: #fff; padding: 5px 10px; border-radius: 4px; font-family: monospace; font-size: 14px; z-index: 1000; }
+    .btn { position: fixed; width: 60px; height: 60px; background: #fff; border: none; border-radius: 12px; color: #111; font-size: 24px; font-weight: 700; box-shadow: 0 4px 16px rgba(255,255,255,0.3); transition: transform .2s cubic-bezier(.2,.8,.2,1), background .2s cubic-bezier(.2,.8,.2,1); z-index: 1000; touch-action: manipulation; cursor: pointer; }
+    .btn:hover { transform: scale(1.06); background: #eee; }
+    #btn-rotate { left: 10px; bottom: 200px; }
+    #btn-y-up { left: 80px; bottom: 200px; }
+    #btn-y-dn { left: 80px; bottom: 130px; }
+    #btn-zoom-in { left: 160px; bottom: 200px; }
+    #btn-zoom-out { left: 160px; bottom: 130px; }
+    #joystick { position: fixed; left: 10px; bottom: 10px; width: 120px; height: 120px; border-radius: 50%; background: rgba(255,255,255,0.08); outline: 1px solid rgba(255,255,255,0.18); box-shadow: inset 0 0 20px rgba(255,255,255,0.06); z-index: 1000; touch-action: none; }
+    #joy-thumb { position: absolute; left: 50%; top: 50%; width: 56px; height: 56px; border-radius: 50%; background: rgba(255,255,255,0.35); box-shadow: 0 6px 18px rgba(0,0,0,0.35); transform: translate(-50%,-50%); transition: left 80ms ease, top 80ms ease; pointer-events: none; }
+    :root { --bar-expanded: 72px; --icon-size: 48px; --icon-left-base: 11px; --icon-top-base: 11px; --gap: 5px; --sel-scale: 1.15; }
+    #right-bar { position: fixed; top: 0; right: 0; bottom: 0; width: var(--bar-expanded); background: #fff; z-index: 9999; box-sizing: border-box; padding: 3px; box-shadow: -1px 0 0 rgba(255,255,255,.25), inset -6px 0 18px rgba(0,0,0,.35); overflow: visible; }
+    .stacker-icon, .thin_stacker-icon, .curved_piece-icon { position: absolute; width: var(--icon-size); height: var(--icon-size); left: var(--icon-left-base); display: grid; place-items: center; cursor: pointer; transform-origin: center; transform: translate(0) scale(1); transition: all 220ms cubic-bezier(.2,.8,.2,1); }
+    .stacker-icon:not(.selected):hover, .thin_stacker-icon:not(.selected):hover, .curved_piece-icon:not(.selected):hover { transform: translate(0) scale(var(--sel-scale)); }
+    .stacker-icon.selected, .thin_stacker-icon.selected, .curved_piece-icon.selected { transform: translateX(calc(-1 * (var(--icon-left-base) + (var(--icon-size) * var(--sel-scale)) + var(--gap)))) scale(var(--sel-scale)); pointer-events: none; cursor: default; }
+    .stacker-icon, .thin_stacker-icon, .curved_piece-icon { background: transparent !important; }
+    .icon-image { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+    .thin_stacker-icon { top: calc(var(--icon-top-base) + var(--icon-size) + var(--gap)); background: transparent !important; }
+    .curved_piece-icon { top: calc(var(--icon-top-base) + (var(--icon-size) + var(--gap)) * 2); background: transparent !important; border-radius: 8px; overflow: hidden; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+</head>
+<body>
+  <div id="fps-counter">FPS: --</div>
+  <div id="right-bar">
+    <div class="stacker-icon">
+      <img src="https://static.wikia.nocookie.net/gravitrax/images/d/dd/Full_Height_Tile_Schematic.png/revision/latest/scale-to-width/360?cb=20210120224936" alt="Stacker" class="icon-image">
+    </div>
+    <div class="thin_stacker-icon">
+      <img src="https://static.wikia.nocookie.net/gravitrax/images/e/ed/1-2_Height_Tile_Schematic.png/revision/latest/scale-to-width/360?cb=20210120224809" alt="Thin Stacker" class="icon-image">
+    </div>
+    <div class="curved_piece-icon">
+      <img src="https://static.wikia.nocookie.net/gravitrax/images/9/95/Curve_Schematic.png/revision/latest?cb=20210120221547" alt="Curved Piece" class="icon-image">
+    </div>
+  </div>
+
+  <div id="joystick" aria-label="Move"><div id="joy-thumb"></div></div>
+  <button id="btn-rotate"   class="btn" aria-label="Rotate 90°">R</button>
+  <button id="btn-y-up"     class="btn" aria-label="Camera up">▲</button>
+  <button id="btn-y-dn"     class="btn" aria-label="Camera down">▼</button>
+  <button id="btn-zoom-in"  class="btn" aria-label="Zoom in">🔍+</button>
+  <button id="btn-zoom-out" class="btn" aria-label="Zoom out">🔍−</button>
+
+  <script>
+    
+    let selectedItem = "stacker";  // default selectable
+    const stackerEl = document.querySelector('.stacker-icon');
+    const thinStackerEl  = document.querySelector('.thin_stacker-icon');
+    const curvedPieceEl    = document.querySelector('.curved_piece-icon');
+    function setSelected(tool) {
+      selectedItem = tool;
+      stackerEl.classList.toggle('selected', tool === "stacker");
+      thinStackerEl.classList.toggle('selected',  tool === "thin_stacker");
+      curvedPieceEl.classList.toggle('selected',    tool === "curved_piece");
+    }
+    setSelected('stacker');
+    stackerEl.addEventListener('click', () => setSelected('stacker'));
+    thinStackerEl .addEventListener('click', () => setSelected('thin_stacker'));
+    curvedPieceEl   .addEventListener('click', () => setSelected('curved_piece'));
+
+
+    const scene = new THREE.Scene();
+    let W = window.innerWidth, H = window.innerHeight;
+
+    const camera = new THREE.PerspectiveCamera(40, W / H, 0.1, 5000);
+    camera.position.set(0, 20, 24);
+    camera.lookAt(0, 0, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(W, H);
+    renderer.setClearColor(0x000000, 1);
+    document.body.appendChild(renderer.domElement);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+    const key = new THREE.DirectionalLight(0xffffff, 0.9);
+    key.position.set(6, 10, 5);
+    scene.add(key);
+
+    function hexShape(r) {
+      const s = new THREE.Shape();
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        const x = r * Math.cos(a), y = r * Math.sin(a);
+        if (i === 0) s.moveTo(x, y); else s.lineTo(x, y);
+      }
+      s.closePath(); return s;
+    }
+    function hexPathCW(r, cx = 0, cy = 0) {
+      const p = new THREE.Path();
+      for (let i = 5; i >= 0; i--) {
+        const a = (i / 6) * Math.PI * 2;
+        const x = cx + r * Math.cos(a), y = cy + r * Math.sin(a);
+        if (i === 5) p.moveTo(x, y); else p.lineTo(x, y);
+      }
+      p.closePath(); return p;
+    }
+    function axialToXY(q, r, cellR) {
+      const hx = Math.sqrt(3) * cellR, hz = 1.5 * cellR;
+      return { x: hx * (q + r / 2), y: hz * r };
+    }
+    function axialHexDisk(R) {
+      const out = [];
+      for (let q = -R; q <= R; q++) {
+        const r1 = Math.max(-R, -q - R), r2 = Math.min(R, -q + R);
+        for (let r = r1; r <= r2; r++) out.push({ q, r });
+      }
+      return out;
+    }
+
+    const cellR = 1.0;
+    const wallRatio = 0.30;
+    const holeR = cellR * (1 - wallRatio);
+    const plateMargin = 0.55;
+    const plateThick = 0.2 * (2 * cellR);
+
+    const hexPositions = [
+      { q: 0, r: 0 },    // Center only
+    ];
+
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    
+    hexPositions.forEach(pos => {
+      const { x, y } = axialToXY(pos.q, pos.r, cellR);
+      minX = Math.min(minX, x - holeR);
+      maxX = Math.max(maxX, x + holeR);
+      minY = Math.min(minY, y - holeR);
+      maxY = Math.max(maxY, y + holeR);
+    });
+
+    const width = (maxX - minX) + 2 * plateMargin * cellR;
+    const height = (maxY - minY) + 2 * plateMargin * cellR;
+    const outerHexR = Math.max(width, height) / 2;
+
+    const plateShape = hexShape(outerHexR);
+    hexPositions.forEach(pos => {
+      const { x, y } = axialToXY(pos.q, pos.r, cellR);
+      plateShape.holes.push(hexPathCW(holeR, x, y));
+    });
+    
+    const plateGeom = new THREE.ExtrudeGeometry(plateShape, { depth: plateThick, bevelEnabled: false });
+    plateGeom.center();
+    const plateMat = new THREE.MeshPhongMaterial({ color: 0xffffff, specular: 0xaaaaaa, shininess: 12 });
+    
+    const plate = new THREE.Mesh(plateGeom, plateMat);
+    plate.rotation.x = -Math.PI / 2;
+    plate.position.y = plateThick / 2;
+    scene.add(plate);
+
+    const target = new THREE.Vector3(0, 0, 0);
+    const spherical = new THREE.Spherical();
+    const offset = new THREE.Vector3();
+
+    offset.copy(camera.position).sub(target);
+    spherical.setFromVector3(offset);
+    let baseRadius = spherical.radius;
+    const basePhi  = spherical.phi;
+    let currentTheta = spherical.theta;
+    let targetTheta  = currentTheta;
+    let currentY = 0;
+    let targetY = 0;
+
+    const clock = new THREE.Clock();
+    const smooth = 9;
+
+    const keysDown = { w:false, a:false, s:false, d:false };
+    const MOVE_SPEED = 6.0;
+    const ZOOM_STEP  = 1.2;
+    const RADIUS_MIN = 4.0;
+    const RADIUS_MAX = 120.0;
+    const Y_STEP     = 1.5;
+
+    window.addEventListener('keydown', (e) => {
+      const k = e.key.toLowerCase();
+      if ([' ', 'arrowup', 'arrowdown','w','a','s','d'].includes(k)) e.preventDefault();
+      if (k === ' ') targetTheta += Math.PI / 2;
+      else if (k === 'arrowup')   baseRadius = Math.max(RADIUS_MIN, baseRadius - ZOOM_STEP);
+      else if (k === 'arrowdown') baseRadius = Math.min(RADIUS_MAX, baseRadius + ZOOM_STEP);
+      else if (['w','a','s','d'].includes(k)) keysDown[k] = true;
+    });
+    window.addEventListener('keyup', (e) => {
+      const k = e.key.toLowerCase();
+      if (['w','a','s','d'].includes(k)) keysDown[k] = false;
+    });
+
+    document.getElementById('btn-rotate'  ).addEventListener('click', () => targetTheta += Math.PI/2);
+    document.getElementById('btn-y-up'    ).addEventListener('click', () => targetY += Y_STEP);
+    document.getElementById('btn-y-dn'    ).addEventListener('click', () => targetY -= Y_STEP);
+    document.getElementById('btn-zoom-in' ).addEventListener('click', () => baseRadius = Math.max(RADIUS_MIN, baseRadius - ZOOM_STEP));
+    document.getElementById('btn-zoom-out').addEventListener('click', () => baseRadius = Math.min(RADIUS_MAX, baseRadius + ZOOM_STEP));
+    ['btn-rotate','btn-y-up','btn-y-dn','btn-zoom-in','btn-zoom-out'].forEach(id=>{
+      const el = document.getElementById(id);
+      el.addEventListener('touchstart', (e)=>{ e.preventDefault(); el.click(); }, {passive:false});
+    });
+
+    const joy = document.getElementById('joystick');
+    const thumb = document.getElementById('joy-thumb');
+    let joystickChecker = 0; // 0=nothing,1=up,2=down,3=left,4=right,5=mid
+    let isHolding = false;
+    function centerThumb(){ thumb.style.left = '50%'; thumb.style.top = '50%'; }
+    function handleJoyMove(x,y){
+      if (!isHolding) return;
+      const rect = joy.getBoundingClientRect();
+      const cx = rect.left + rect.width/2, cy = rect.top + rect.height/2;
+      const dx = x - cx, dy = y - cy;
+      const ax = Math.abs(dx), ay = Math.abs(dy);
+      if (ax < 20 && ay < 20) { joystickChecker = 5; centerThumb(); }
+      else if (ay > ax) {
+        if (dy < 0) { joystickChecker = 1; thumb.style.left='50%'; thumb.style.top='20%'; }
+        else        { joystickChecker = 2; thumb.style.left='50%'; thumb.style.top='80%'; }
+      } else {
+        if (dx < 0) { joystickChecker = 3; thumb.style.left='20%'; thumb.style.top='50%'; }
+        else        { joystickChecker = 4; thumb.style.left='80%'; thumb.style.top='50%'; }
+      }
+    }
+    joy.addEventListener('pointerdown', (e) => { isHolding = true; joy.setPointerCapture(e.pointerId); handleJoyMove(e.clientX, e.clientY); });
+    joy.addEventListener('pointermove', (e) => handleJoyMove(e.clientX, e.clientY));
+    joy.addEventListener('pointerup',   () => { isHolding=false; joystickChecker=0; centerThumb(); });
+    joy.addEventListener('pointercancel',()=> { isHolding=false; joystickChecker=0; centerThumb(); });
+    joy.addEventListener('pointerleave', ()=> { isHolding=false; joystickChecker=0; centerThumb(); });
+
+    function moveRig(dt) {
+      const moving = (joystickChecker > 0 && joystickChecker < 5) || keysDown.w || keysDown.a || keysDown.s || keysDown.d;
+      if (!moving) return;
+      const look = new THREE.Vector3().subVectors(target, camera.position); look.y = 0;
+      const L = look.length(); if (!L) return;
+      look.divideScalar(L);
+      const right = new THREE.Vector3().crossVectors(look, new THREE.Vector3(0,1,0)).normalize();
+      const step = MOVE_SPEED * dt;
+      if (joystickChecker === 1 || keysDown.w) target.addScaledVector(look, step);
+      if (joystickChecker === 2 || keysDown.s) target.addScaledVector(look, -step);
+      if (joystickChecker === 4 || keysDown.d) target.addScaledVector(right, step);
+      if (joystickChecker === 3 || keysDown.a) target.addScaledVector(right, -step);
+    }
+
+    window.addEventListener('resize', () => {
+      W = window.innerWidth; H = window.innerHeight;
+      camera.aspect = W / H; camera.updateProjectionMatrix();
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(W, H);
+      const curvedIconCanvas = document.getElementById('curvedIcon');
+    });
+
+    const fpsCounter=document.getElementById('fps-counter');
+    let frameCount=0;
+    let lastTime=performance.now();
+    let fps=0;
+    
+    (function animate(){
+      requestAnimationFrame(animate);
+      const dt=Math.min(0.05,clock.getDelta());
+      
+      frameCount++;
+      const now=performance.now();
+      const elapsed=now-lastTime;
+      if (elapsed>=1000) {
+        fps=Math.round((frameCount*1000)/elapsed);
+        fpsCounter.textContent=`FPS: ${fps}`;
+        frameCount=0;
+        lastTime=now;
+      }
+
+      moveRig(dt);
+      currentTheta=THREE.MathUtils.damp(currentTheta,targetTheta,smooth,dt);
+      currentY=THREE.MathUtils.damp(currentY,targetY,smooth,dt);
+      target.y=currentY;
+
+      spherical.radius=baseRadius;
+      spherical.phi=basePhi;
+      spherical.theta=currentTheta;
+
+      offset.setFromSpherical(spherical);
+      camera.position.copy(target).add(offset);
+      camera.lookAt(target);
+      
+      scene.traverse(object=>{
+        if(object.isLOD){
+          object.update(camera);
+        }
+      });
+
+      renderer.render(scene,camera);
+    })();
+  </script>
+
+  <script>
+    window.GameConfig = window.GameConfig || {};
+  </script>
+  <script src="config.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
