@@ -1,10 +1,19 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta http-equiv="refresh" content="0; url=mainscreen.html">
     <title>Redirecting to Main Screen</title>
 </head>
 <body>
-    <p>If you are not redirected automatically, <a href="mainscreen.html">click here</a>.</p>
+    <p>If you are not redirected automatically,<div><a id='a-href' href="">Click Here</a></div></p>
+    <script>
+        
+        const btnUrl = "https://viyanajith.github.io/LTM-games/mainscreen.html";
+
+        window.onload = function() {
+        window.location = btnUrl;
+        document.getElementById('a-href').href = btnUrl;
+        }
+
+    </script>
 </body>
 </html>
